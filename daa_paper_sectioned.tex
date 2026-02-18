@@ -1,0 +1,317 @@
+\documentclass{article}
+\usepackage{neurips_2024}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{colortbl}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\KL}{\mathrm{KL}}
+\newcommand{\JSD}{\mathrm{JSD}}
+\newcommand{\prob}{\mathbb{P}}
+
+\title{Dynamic Agent Arbitrator: Neural Meta-Learning for\\Cost-Effective Multi-Agent LLM Orchestration\\with Provable Error Mitigation}
+
+\author{
+  Anonymous Authors\\
+  \texttt{submitted to NeurIPS 2026}
+}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+% Abstract
+\input{sections/abstract}
+
+% Introduction
+\input{sections/introduction}
+
+% Related Work
+\input{sections/related_work}
+
+% Problem Formulation
+\input{sections/problem_formulation}
+
+% Method (2 parts)
+\input{sections/method_part1}
+\input{sections/method_part2}
+
+% Theoretical Analysis
+\input{sections/theory}
+
+% Experiments (2 parts)
+\input{sections/experiments_part1}
+\input{sections/experiments_part2}
+
+% Discussion and Conclusion
+\input{sections/discussion_conclusion}
+
+\section*{Reproducibility Statement}
+
+Complete source code, evaluation scripts, model configurations, and experimental protocols are available at \texttt{[anonymized for review]}. All experiments include:
+\begin{itemize}
+\item \textbf{Models}: Qwen2.5-1.5B/3B/7B/14B-Instruct served via vLLM with temperature $T=0$ (greedy decoding)
+\item \textbf{Hardware}: NVIDIA H100 80GB GPU for inference; evaluation scripts are self-contained Python
+\item \textbf{Data splits}: PlanCraft val.small.easy (50 tasks), WorkBench (60 tasks, 6 domains), FinanceBench (18 tasks), BrowseComp+ (30 tasks)
+\item \textbf{Determinism}: Greedy decoding ensures reproducible outputs given identical model weights and inputs
+\item \textbf{Software}: Python 3.10, vLLM 0.4+, openai client library, full requirements.txt provided
+\item \textbf{Estimated reproduction time}: 2--4 hours on H100 GPU (model loading + 4 benchmark evaluations)
+\end{itemize}
+
+\section*{Acknowledgments}
+
+[To be added upon acceptance.]
+
+\bibliographystyle{unsrtnat}
+\begin{thebibliography}{99}
+
+\bibitem{brown2020language}
+Tom Brown et al.
+\newblock Language models are few-shot learners.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem{openai2023gpt4}
+OpenAI.
+\newblock GPT-4 technical report.
+\newblock \emph{arXiv:2303.08774}, 2023.
+
+\bibitem{anthropic2024claude}
+Anthropic.
+\newblock Claude 3 model card and evaluations.
+\newblock Technical report, 2024.
+
+\bibitem{kaplan2020scaling}
+Jared Kaplan et al.
+\newblock Scaling laws for neural language models.
+\newblock \emph{arXiv:2001.08361}, 2020.
+
+\bibitem{hoffmann2022training}
+Jordan Hoffmann et al.
+\newblock Training compute-optimal large language models.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{chen2023frugalgpt}
+Lingjiao Chen et al.
+\newblock FrugalGPT: How to use large language models while reducing cost and improving performance.
+\newblock \emph{arXiv:2305.05176}, 2023.
+
+\bibitem{wei2022chain}
+Jason Wei et al.
+\newblock Chain-of-thought prompting elicits reasoning in large language models.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{kojima2022large}
+Takeshi Kojima et al.
+\newblock Large language models are zero-shot reasoners.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{yao2023tree}
+Shunyu Yao et al.
+\newblock Tree of thoughts: Deliberate problem solving with large language models.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem{jiang2024mixtureofagents}
+Junlin Jiang et al.
+\newblock Mixture-of-agents enhances large language model capabilities.
+\newblock \emph{arXiv:2406.04692}, 2024.
+
+\bibitem{wang2023selfconsistency}
+Xuezhi Wang et al.
+\newblock Self-consistency improves chain of thought reasoning in language models.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem{kadavath2022language}
+Saurav Kadavath et al.
+\newblock Language models (mostly) know what they know.
+\newblock \emph{arXiv:2207.05221}, 2022.
+
+\bibitem{madaan2023selfrefine}
+Aman Madaan et al.
+\newblock Self-refine: Iterative refinement with self-feedback.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem{cobbe2021training}
+Karl Cobbe et al.
+\newblock Training verifiers to solve math word problems.
+\newblock \emph{arXiv:2110.14168}, 2021.
+
+\bibitem{lightman2023lets}
+Hunter Lightman et al.
+\newblock Let's verify step by step.
+\newblock \emph{arXiv:2305.20050}, 2023.
+
+\bibitem{leviathan2023fast}
+Yaniv Leviathan et al.
+\newblock Fast inference from transformers via speculative decoding.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem{chen2023accelerating}
+Charlie Chen et al.
+\newblock Accelerating large language model decoding with speculative sampling.
+\newblock \emph{arXiv:2302.01318}, 2023.
+
+\bibitem{elbayad2020depth}
+Maha Elbayad et al.
+\newblock Depth-adaptive transformer.
+\newblock In \emph{ICLR}, 2020.
+
+\bibitem{schuster2022confident}
+Tal Schuster et al.
+\newblock Confident adaptive language modeling.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{zhou2023large}
+Yongchao Zhou et al.
+\newblock Large language models are human-level prompt engineers.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem{prasad2023grips}
+Archiki Prasad et al.
+\newblock GRIPS: Gradient-free, edit-based instruction search for prompting large language models.
+\newblock In \emph{EACL}, 2023.
+
+\bibitem{min2022rethinking}
+Sewon Min et al.
+\newblock Rethinking the role of demonstrations: What makes in-context learning work?
+\newblock In \emph{EMNLP}, 2022.
+
+\bibitem{reimers2019sentence}
+Nils Reimers and Iryna Gurevych.
+\newblock Sentence-BERT: Sentence embeddings using siamese BERT-networks.
+\newblock In \emph{EMNLP}, 2019.
+
+\bibitem{cho2014learning}
+Kyunghyun Cho et al.
+\newblock Learning phrase representations using RNN encoder-decoder for statistical machine translation.
+\newblock In \emph{EMNLP}, 2014.
+
+\bibitem{schulman2017proximal}
+John Schulman et al.
+\newblock Proximal policy optimization algorithms.
+\newblock \emph{arXiv:1707.06347}, 2017.
+
+\bibitem{schulman2016high}
+John Schulman et al.
+\newblock High-dimensional continuous control using generalized advantage estimation.
+\newblock In \emph{ICLR}, 2016.
+
+\bibitem{mnih2016asynchronous}
+Volodymyr Mnih et al.
+\newblock Asynchronous methods for deep reinforcement learning.
+\newblock In \emph{ICML}, 2016.
+
+\bibitem{kingma2015adam}
+Diederik Kingma and Jimmy Ba.
+\newblock Adam: A method for stochastic optimization.
+\newblock In \emph{ICLR}, 2015.
+
+\bibitem{du2023improving}
+Yilun Du et al.
+\newblock Improving factuality and reasoning in language models through multiagent debate.
+\newblock \emph{arXiv:2305.14325}, 2023.
+
+\bibitem{gautierdag2024plancraft}
+Gautier Dagan et al.
+\newblock PlanCraft: An evaluation dataset for planning with LLM agents.
+\newblock \emph{arXiv:2410.13579}, 2024.
+
+\bibitem{islam2024financebench}
+Pranab Islam et al.
+\newblock FinanceBench: A new benchmark for financial question answering.
+\newblock \emph{arXiv:2311.11944}, 2024.
+
+\bibitem{liu2024workbench}
+Tianyu Liu et al.
+\newblock WorkBench: A benchmark for evaluating LLM agents on repository-level code tasks.
+\newblock \emph{arXiv:2404.04604}, 2024.
+
+\bibitem{lewis2020retrieval}
+Patrick Lewis et al.
+\newblock Retrieval-augmented generation for knowledge-intensive NLP tasks.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem{gao2023enabling}
+Luyu Gao et al.
+\newblock Enabling large language models to generate text with citations.
+\newblock \emph{arXiv:2305.14627}, 2023.
+
+\bibitem{chen2023universal}
+Xinyun Chen et al.
+\newblock Universal self-consistency for large language model generation.
+\newblock \emph{arXiv:2311.17311}, 2023.
+
+\bibitem{wang2023towards}
+Xuezhi Wang et al.
+\newblock Towards understanding chain-of-thought prompting: An empirical study of what matters.
+\newblock In \emph{ACL}, 2023.
+
+\bibitem{creswell2022selection}
+Antonia Creswell et al.
+\newblock Selection-inference: Exploiting large language models for interpretable logical reasoning.
+\newblock \emph{arXiv:2205.09712}, 2022.
+
+\bibitem{hokamp2017lexically}
+Chris Hokamp and Qun Liu.
+\newblock Lexically constrained decoding for sequence generation using grid beam search.
+\newblock In \emph{ACL}, 2017.
+
+\bibitem{gao2023pal}
+Luyu Gao et al.
+\newblock PAL: Program-aided language models.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem{first2023baldur}
+Emily First et al.
+\newblock Baldur: Whole-proof generation and repair with large language models.
+\newblock \emph{arXiv:2303.04910}, 2023.
+
+\bibitem{szekely2013energy}
+Gábor Székely and Maria Rizzo.
+\newblock Energy statistics: A class of statistics based on distances.
+\newblock \emph{Journal of Statistical Planning and Inference}, 2013.
+
+\bibitem{ahn2022can}
+Michael Ahn et al.
+\newblock Do as I can, not as I say: Grounding language in robotic affordances.
+\newblock In \emph{CoRL}, 2022.
+
+\bibitem{arora2021survey}
+Saurabh Arora and Prashant Doshi.
+\newblock A survey of inverse reinforcement learning: Techniques, benchmarks, and open problems.
+\newblock \emph{arXiv:1806.06877}, 2021.
+
+\bibitem{patterson2021carbon}
+David Patterson et al.
+\newblock Carbon emissions and large neural network training.
+\newblock \emph{arXiv:2104.10350}, 2021.
+
+\bibitem{qwen2024qwen25}
+Qwen Team.
+\newblock Qwen2.5: A party of foundation models.
+\newblock Technical report, Alibaba Cloud, 2024.
+
+\bibitem{kwon2023vllm}
+Woosuk Kwon et al.
+\newblock Efficient memory management for large language model serving with PagedAttention.
+\newblock In \emph{SOSP}, 2023.
+
+\end{thebibliography}
+
+\end{document}

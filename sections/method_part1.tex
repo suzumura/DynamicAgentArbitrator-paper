@@ -1,0 +1,113 @@
+% Method Section - Part 1: Overview and Task Encoding
+\section{Dynamic Agent Arbitrator Framework}
+\label{sec:method}
+
+We now detail the four integrated components comprising the Dynamic Agent Arbitrator (DAA) system. Figure~\ref{fig:architecture} illustrates the complete pipeline, with information flow proceeding from task encoding through diversity probing, policy decision-making, and recursive retry as needed. Each component addresses specific technical challenges identified in \S\ref{sec:problem} while operating synergistically to achieve end-to-end cost-optimized orchestration.
+
+\subsection{Neural Task Representation Encoding}
+\label{sec:encoding}
+
+\textbf{Objective and Challenges.} The first component must compress variable-length reasoning traces $\{x_1, \ldots, x_T\}$ (where individual elements $x_t$ range from single sentences to multi-paragraph analyses) into fixed-size semantic representations $z_T \in \mathbb{R}^{64}$ that capture task complexity, domain characteristics, and reasoning patterns. Key technical challenges include: (C1) \emph{Length variability}---inputs span 10-10,000+ tokens; (C2) \emph{Semantic compression}---preserving reasoning-relevant information while discarding superficial details; (C3) \emph{Real-time inference}---encoding must complete in $< 200$ms to avoid prohibitive latency overhead; (C4) \emph{Complexity correlation}---learned representations must correlate with ground-truth difficulty to enable effective policy decisions.
+
+\textbf{Architecture: Two-Stage Encoding.} We employ a cascaded architecture combining pre-trained semantic embeddings with recurrent sequential modeling:
+
+\paragraph{Stage 1: Semantic Embedding via Sentence Transformers.}
+
+Each text element $x_t$ (representing a reasoning step, intermediate output, or task description) is encoded via \texttt{all-MiniLM-L6-v2}~\cite{reimers2019sentence}, a lightweight sentence transformer trained on 1 billion+ sentence pairs via contrastive learning (Multiple Negatives Ranking Loss). This model maps variable-length text to fixed 384-dimensional dense vectors capturing semantic meaning:
+\begin{equation}
+e_t = f_{\text{SBERT}}(x_t) \in \mathbb{R}^{384}
+\end{equation}
+
+\textbf{Justification:} Sentence-BERT achieves strong semantic similarity correlation (Pearson $r > 0.85$ on STS benchmarks) while maintaining computational efficiency (15ms inference on consumer CPU for 512-token inputs). Its semantic grounding ensures that complexity signals emerge from content rather than superficial statistics like token count.
+
+\textbf{Length Truncation Strategy.} For very long traces ($T > 50$ steps), we apply reduction rate $\rho = 0.8$, uniformly sampling $\tau = \lfloor 0.8T \rfloor$ elements to encode. Empirical analysis (Appendix C) shows negligible accuracy degradation ($< 1.2\%$) from this truncation while providing $5\times$ speedup on long sequences. The sampling prioritizes recent steps (weighted by recency) to capture evolving task state.
+
+\paragraph{Stage 2: Sequential Encoding via Gated Recurrent Unit.}
+
+The sequence of embeddings $\{e_1, \ldots, e_\tau\}$ is processed by a single-layer Gated Recurrent Unit~\cite{cho2014learning} with hidden dimension 64, compressing temporal dependencies into final hidden state:
+\begin{align}
+r_t &= \sigma(W_r e_t + U_r h_{t-1} + b_r) \quad &&\text{(reset gate)} \\
+z_t &= \sigma(W_z e_t + U_z h_{t-1} + b_z) \quad &&\text{(update gate)} \\
+\tilde{h}_t &= \tanh(W_h e_t + U_h (r_t \odot h_{t-1}) + b_h) \quad &&\text{(candidate activation)} \\
+h_t &= (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t \quad &&\text{(hidden state update)} \\
+z_T &= h_\tau \in \mathbb{R}^{64} \quad &&\text{(final task representation)}
+\end{align}
+where $\sigma(\cdot)$ denotes element-wise sigmoid, $\odot$ is Hadamard product, and weight matrices $W_r, W_z, W_h \in \mathbb{R}^{64 \times 384}$, $U_r, U_z, U_h \in \mathbb{R}^{64 \times 64}$ are learned parameters.
+
+\textbf{GRU vs LSTM vs Transformer.} We choose GRU over LSTM for parameter efficiency (9 matrices vs 12) and over Transformer for sequential rather than permutation-invariant processing---reasoning order matters for capturing logical dependencies. Empirical comparison (Table~\ref{tab:encoder_ablation}, Appendix D) shows GRU matches LSTM performance while reducing encoding time 18\% and outperforms bag-of-embeddings baselines by 12.3\% in complexity prediction accuracy.
+
+\paragraph{Complexity Estimation from Latent Representation.}
+
+Task difficulty $D \in [0,1]$ is derived from the norm of latent vector via sigmoid transformation:
+\begin{equation}
+D = \frac{1}{1 + \exp(-(\|z_T\|_2 - \mu))}
+\label{eq:complexity_estimation}
+\end{equation}
+where $\mu = 3.0$ is a calibration parameter set such that median-complexity tasks (human rating 5/10) yield $D \approx 0.5$.
+
+\textbf{Intuition and Validation.} The norm $\|z_T\|_2$ intuitively captures ``information content''---complex tasks requiring elaborate multi-faceted reasoning produce higher-magnitude hidden states as the GRU integrates diverse semantic signals. We validate this hypothesis through correlation analysis on 150 human-annotated tasks spanning easy (arithmetic), medium (multi-hop QA), and hard (strategic planning) difficulties:
+\begin{itemize}
+\item Pearson correlation: $r = 0.52$ ($p < 0.001$)
+\item Spearman rank correlation: $\rho = 0.58$ ($p < 0.001$)
+\item Classification accuracy (3-way easy/medium/hard): 71.3\% (vs 33\% random baseline)
+\end{itemize}
+
+While moderate, this correlation substantially exceeds token-count baseline ($r = 0.23$) and keyword-frequency baseline ($r = 0.18$), validating semantic encoding's advantage.
+
+\textbf{Training and Initialization.} The GRU parameters are initialized via Xavier uniform and pre-trained on 10,000 task-complexity pairs using mean-squared-error loss $\mathcal{L}_{\text{pre}} = \mathbb{E}[(D_{\text{pred}} - D_{\text{true}})^2]$ where $D_{\text{true}}$ comes from human annotations normalized to $[0,1]$. This pre-training provides a warm start, subsequently refined end-to-end during PPO policy training as the representation adapts to maximize downstream reward.
+
+\textbf{Computational Cost.} Full encoding pipeline (SBERT + GRU) completes in 145ms average (95th percentile: 220ms) on consumer CPU (Intel i7), meeting real-time constraints. Batch processing enables further speedup if multiple queries processed concurrently.
+
+\subsection{Diversity-Based Error Detection via Ensemble Probing}
+\label{sec:diversity}
+
+\textbf{Motivation: The Convergent Hallucination Problem.} Traditional self-consistency methods aggregate multiple model outputs via majority voting, assuming errors are independent and correctness correlates with consensus. However, this assumption breaks down when models share systematic biases from overlapping training data, RLHF procedures, or architectural similarities---leading to \emph{convergent hallucinations} where ensembles confidently agree on incorrect answers~\cite{kadavath2022language}. Our diversity-based approach treats disagreement as a warning signal rather than relying solely on agreement for validation.
+
+\textbf{Probing Protocol.} At critical decision points (determined by policy or manual specification), we query an economy ensemble $\mathcal{M} = \{M_1, M_2, M_3\}$ comprising GPT-3.5 Turbo, Gemini Flash, and Claude Haiku on a standardized probe task $q_{\text{probe}}$. For reasoning tasks, $q_{\text{probe}}$ requests next-step prediction or intermediate value estimation. Each model $M_i$ produces output distribution $p_i \in \Delta(\mathcal{V})$ over vocabulary/action space $\mathcal{V}$ (typically top-100 tokens or discrete action set).
+
+\textbf{Divergence Metric: Jensen-Shannon Divergence.} We quantify output diversity via Jensen-Shannon Divergence, a symmetric bounded variant of KL divergence:
+\begin{equation}
+\delta = \text{JSD}(p_1, p_2, p_3) = \frac{1}{3} \sum_{i=1}^3 \text{KL}\left(p_i \,\big\|\, \bar{p}\right), \quad \bar{p} = \frac{1}{3}\sum_{j=1}^3 p_j
+\label{eq:jsd}
+\end{equation}
+where $\text{KL}(p \| q) = \sum_k p(k) \log \frac{p(k)}{q(k)}$ is Kullback-Leibler divergence.
+
+\textbf{Properties and Advantages.}
+\begin{itemize}
+\item \textbf{Bounded}: $\delta \in [0, \log 3] \approx [0, 1.10]$, facilitating threshold selection
+\item \textbf{Symmetric}: $\text{JSD}(p, q) = \text{JSD}(q, p)$, unlike asymmetric KL divergence
+\item \textbf{Smoothness}: JSD satisfies triangle inequality (metric property), enabling gradient-based optimization
+\item \textbf{Robustness}: Less sensitive to low-probability tail events than max-divergence metrics
+\end{itemize}
+
+\textbf{Empirical Validation: Correlation with Ground-Truth Errors.} We conduct systematic analysis quantifying the relationship between diversity $\delta$ and actual error magnitude $\epsilon$ across 100 simulation episodes with known ground truth:
+
+\begin{itemize}
+\item \textbf{Pearson correlation (linear)}: $r = 0.385$, $p < 0.001$ (two-tailed $t$-test, $t = 4.12$, $df = 98$)
+\item \textbf{Spearman correlation (rank)}: $\rho = 0.412$, $p < 0.001$ (more robust to outliers)
+\item \textbf{Regression analysis}: $\epsilon = 0.24 + 1.87\delta$ ($R^2 = 0.148$, $F = 16.98$, $p < 0.001$)
+\item \textbf{Classification accuracy}: Using $\delta > 0.6$ threshold to predict $\epsilon > 0.3$ achieves 73.2\% accuracy, 68.1\% precision, 81.3\% recall (F1 = 0.742)
+\end{itemize}
+
+\textbf{Interpretation.} The moderate positive correlation ($r = 0.385$) validates $\delta$ as a \emph{probabilistic indicator} providing actionable but imperfect signal. This aligns with theoretical expectations---diversity captures disagreement arising from both errors and legitimate stylistic/approach differences, while missing convergent errors where models share biases.
+
+\textbf{False Positive Analysis.} Among high-diversity cases ($\delta > 0.7$), approximately 23\% involve correct outputs with stylistic disagreements (formatting, verbosity, equivalent formulations). These false positives incur unnecessary verification costs but do not harm correctness.
+
+\textbf{False Negative Analysis.} Approximately 18\% of significant errors ($\epsilon > 0.3$) exhibit low diversity ($\delta < 0.1$), indicating convergent hallucinations. These represent the method's primary limitation, motivating combination with learned verifiers or external knowledge grounding in future work.
+
+\textbf{Diversity Bonus for Policy.} The diversity score is transformed into bonus feature for meta-policy:
+\begin{equation}
+\Delta_{\text{div}} = \log(1 + \delta) \in [0, 0.74]
+\end{equation}
+This logarithmic transformation provides diminishing sensitivity to extreme diversity, preventing overreaction to benign disagreements.
+
+\textbf{Alternative Metrics Considered.} We evaluated multiple diversity measures:
+\begin{itemize}
+\item \textbf{Variance in token probabilities}: Simpler but less principled
+\item \textbf{Symmetric KL divergence}: $0.5(\text{KL}(p_1 \| p_2) + \text{KL}(p_2 \| p_1))$---similar performance but lacks extension to $>2$ models
+\item \textbf{Total variation distance}: Less sensitive to distribution differences
+\item \textbf{Energy distance}~\cite{szekely2013energy}: Computationally expensive for high-dimensional outputs
+\end{itemize}
+JSD provides optimal balance of theoretical grounding, computational efficiency, and empirical performance.
+
+\textbf{Computational Overhead.} Querying 3 economy models in parallel incurs $\approx 1.8$s latency (dominated by API calls) and 0.5 cost units ($3 \times 0.15$ + coordination overhead). This overhead is amortized across multiple steps when diversity remains below intervention threshold.

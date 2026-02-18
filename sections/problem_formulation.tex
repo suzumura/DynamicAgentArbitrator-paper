@@ -1,0 +1,185 @@
+% Problem Formulation Section
+\section{Preliminaries and Problem Formulation}
+\label{sec:problem}
+
+We formalize multi-step LLM reasoning as a Markov Decision Process (MDP), rigorously characterize error propagation dynamics, and define the optimization objective balancing accuracy, cost, and error mitigation. This formal foundation enables principled algorithm design and theoretical analysis.
+
+\subsection{Multi-Step Reasoning as a Markov Decision Process}
+
+\textbf{Task Decomposition.} Consider a complex reasoning task $\mathcal{T}$ that decomposes into a sequence of $T$ interdependent subtasks $\{\mathcal{T}_1, \mathcal{T}_2, \ldots, \mathcal{T}_T\}$. Each subtask $\mathcal{T}_t$ consumes conversation history $h_t = \{y_1, \ldots, y_{t-1}\}$ comprising all previous outputs and produces a response $y_t \in \mathcal{Y}$ (where $\mathcal{Y}$ is the output space---typically natural language text, code, or structured data). The complete task output is $y_{1:T} = (y_1, \ldots, y_T)$, evaluated against ground truth via domain-specific metrics (exact match, F1, functional correctness, etc.).
+
+\textbf{MDP Formulation.} We model the orchestration problem as an episodic Markov Decision Process $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, r, \gamma, s_0)$ where:
+
+\begin{itemize}
+\item \textbf{State Space} $\mathcal{S} \subset \mathbb{R}^{66}$: Each state $s_t \in \mathcal{S}$ encodes: (1) Task semantic representation $z_T \in \mathbb{R}^{64}$ (learned via neural encoder, detailed in \S\ref{sec:encoding}), capturing aggregated task complexity and domain characteristics; (2) Convergence rate $c_t \in [0,1]$, quantifying agreement among economy ensemble outputs as $c_t = 1 - \frac{4\delta_t + \epsilon_t}{5}$ where $\delta_t$ is Jensen-Shannon divergence and $\epsilon_t$ is accumulated error; (3) Inference depth $d_t \in \mathbb{R}_+$, tracking cumulative computational cost normalized to $[0,10]$ via $d_t = \min(10, \sum_{i=1}^{t-1} \text{cost}(a_i) / 10)$.
+
+\item \textbf{Action Space} $\mathcal{A} = \{a_0, a_1, a_2, a_3\}$: Four inference strategies with heterogeneous cost-accuracy-latency profiles:
+\begin{align*}
+a_0 &: \text{Single Premium (GPT-4)} \\
+    &\quad \text{Cost} = 5.0, \quad \prob(\text{error\_inject}) = 0.1D, \quad \text{Latency} \approx 3.2\text{s} \\
+a_1 &: \text{Economy Team (3-model ensemble)} \\
+    &\quad \text{Cost} = 0.5, \quad \prob(\text{error\_inject}) = 0.6D, \quad \text{Latency} \approx 1.8\text{s} \\
+a_2 &: \text{Hybrid (premium lead + economy support)} \\
+    &\quad \text{Cost} = 2.0, \quad \prob(\text{error\_inject}) = 0.3D, \quad \text{Latency} \approx 2.5\text{s} \\
+a_3 &: \text{Centralized Verification (extensive validation)} \\
+    &\quad \text{Cost} = 10.0, \quad \epsilon_t \gets 0 \text{ (error reset)}, \quad \text{Latency} \approx 8.0\text{s}
+\end{align*}
+Here $D \in [0,1]$ denotes task complexity (estimated via $D = \sigma(\|z_T\|_2 - \mu)$ as detailed in \S\ref{sec:encoding}). Verification ($a_3$) provides strong guarantees at high cost, modeling human-in-the-loop validation or extensive multi-model consensus protocols.
+
+\item \textbf{Transition Function} $P: \mathcal{S} \times \mathcal{A} \to \Delta(\mathcal{S})$: Transitions are stochastic due to: (1) Probabilistic error injection governed by action-specific rates; (2) LLM sampling randomness (temperature, nucleus sampling); (3) Nondeterministic environment dynamics in real-world benchmarks. The next state satisfies:
+\begin{align}
+s_{t+1}.z_T &= s_t.z_T \quad \text{(task representation constant within episode)} \\
+s_{t+1}.c_{t+1} &= f_{\text{conv}}(s_t, a_t, y_t) \quad \text{(updated based on output diversity)} \\
+s_{t+1}.d_{t+1} &= s_t.d_t + \text{cost}(a_t) / 10 \quad \text{(cumulative cost tracking)}
+\end{align}
+
+\item \textbf{Reward Function} $r: \mathcal{S} \times \mathcal{A} \to \mathbb{R}$: We design a composite reward balancing three competing objectives:
+\begin{equation}
+r_t = \underbrace{\text{Acc}_t}_{\text{immediate accuracy}} - \underbrace{\alpha \exp(\beta \cdot \epsilon_t)}_{\text{exponential error penalty}} - \underbrace{\lambda \log(\text{Cost}_t + \varepsilon)}_{\text{logarithmic cost)}}
+\label{eq:composite_reward}
+\end{equation}
+where:
+\begin{itemize}
+\item $\text{Acc}_t = \max(0, 1 - \epsilon_t) \in [0,1]$ measures step-level correctness
+\item $\alpha = 2.0, \beta = 1.5$ parameterize exponential penalty, heavily penalizing large errors to prevent catastrophic failures
+\item $\lambda \in [0.1, 1.0]$ controls cost sensitivity (tuned for domain-specific budgets)
+\item $\varepsilon = 0.1$ prevents logarithm singularity
+\item $\text{Cost}_t$ is action-specific expense in normalized units
+\end{itemize}
+
+\textbf{Design Rationale:} The exponential error term ensures that two moderate mistakes (each $\epsilon = 0.3$) incur far greater penalty than one small mistake ($\epsilon = 0.1$), reflecting real-world failure modes where compounding errors cause disproportionate harm. The logarithmic cost term exhibits diminishing marginal penalty, allowing strategic high-cost verification when error risks justify expense. Hyperparameters $(\alpha, \beta, \lambda)$ were tuned via grid search across 50 episodes to maximize composite reward (details in Appendix B).
+
+\item \textbf{Discount Factor} $\gamma = 0.99$: Standard near-future discounting for finite-horizon episodic tasks, ensuring convergence while maintaining sensitivity to multi-step consequences.
+
+\item \textbf{Initial State} $s_0$: At episode start, $z_T$ is computed from task description via encoder, $c_0 = 1.0$ (perfect initial convergence), $d_0 = 0$ (no cost incurred).
+\end{itemize}
+
+\textbf{Objective.} The meta-policy $\pi_\theta: \mathcal{S} \to \Delta(\mathcal{A})$ aims to maximize expected cumulative reward:
+\begin{equation}
+J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=1}^T \gamma^{t-1} r_t \right]
+\label{eq:policy_objective}
+\end{equation}
+where trajectory $\tau = (s_1, a_1, r_1, \ldots, s_T, a_T, r_T)$ is sampled via policy $\pi_\theta$ interacting with environment $\mathcal{M}$.
+
+\subsection{Error Propagation Dynamics: Modeling Amplification}
+
+We now rigorously characterize how errors evolve across reasoning steps, providing theoretical foundation for intervention strategies.
+
+\begin{definition}[Task Complexity]
+Let $D \in [0,1]$ quantify semantic reasoning difficulty, estimated via $D = \sigma(\|z_T\|_2 - 3.0)$ where $\sigma(x) = (1 + e^{-x})^{-1}$ is the sigmoid function and $3.0$ is empirically calibrated median threshold. High complexity ($D \to 1$) indicates tasks requiring extensive reasoning, domain knowledge, or multi-step inference.
+\end{definition}
+
+\begin{definition}[Error Magnitude]
+At step $t$, let $\epsilon_t \geq 0$ denote cumulative error magnitude, operationalized as normalized deviation from ground truth: $\epsilon_t = \frac{1}{t}\sum_{i=1}^t \|\hat{y}_i - y_i^*\|$ where $\hat{y}_i$ is model output and $y_i^*$ is ground truth (when available). In practice, $\epsilon_t$ is estimated via proxy metrics: output diversity, confidence scores, or verification outcomes.
+\end{definition}
+
+\begin{assumption}[Geometric Amplification]
+\label{assump:geometric_amplification}
+Without active intervention, errors amplify geometrically across reasoning steps according to:
+\begin{equation}
+\epsilon_{t+1} = \alpha_D \cdot \epsilon_t + \delta_t
+\label{eq:error_dynamics}
+\end{equation}
+where:
+\begin{itemize}
+\item $\alpha_D = 1 + 0.72D \in [1.0, 1.72]$ is complexity-dependent amplification factor
+\item $\delta_t \sim \text{Bernoulli}(p_D) \cdot \mathcal{U}(0, \epsilon_{\max})$ models new error injection
+\item $p_D = 0.2 + 0.5D \in [0.2, 0.7]$ is injection probability
+\item $\epsilon_{\max} = 0.3$ bounds maximum per-step error
+\end{itemize}
+\end{assumption}
+
+\textbf{Empirical Calibration.} We calibrated $\alpha_D$ and $p_D$ by fitting to observed GPT-3.5 error trajectories across 100 diverse tasks spanning arithmetic, commonsense reasoning, and code generation. The geometric model achieves $R^2 = 0.73$ fit to actual error curves, validating its descriptive power. Physical interpretation: factor $\alpha_D > 1$ arises because earlier errors corrupt context, biasing subsequent generation beyond mere superposition of independent mistakes.
+
+\begin{proposition}[Expected Error Growth Without Intervention]
+\label{prop:error_growth}
+Under Assumption~\ref{assump:geometric_amplification} with i.i.d. error injection, expected error after $T$ steps satisfies:
+\begin{equation}
+\mathbb{E}[\epsilon_T] \leq \epsilon_0 \cdot \alpha_D^T + \frac{p_D \cdot \epsilon_{\max}}{2} \cdot \frac{\alpha_D^T - 1}{\alpha_D - 1}
+\label{eq:expected_error_bound}
+\end{equation}
+where $\epsilon_0$ is initial error.
+\end{proposition}
+
+\begin{proof}
+Expand recurrence $\epsilon_t = \alpha_D \epsilon_{t-1} + \delta_{t-1}$ telescopically:
+\begin{align}
+\epsilon_T &= \alpha_D^T \epsilon_0 + \sum_{k=0}^{T-1} \alpha_D^{T-1-k} \delta_k \\
+\mathbb{E}[\epsilon_T] &= \alpha_D^T \epsilon_0 + \sum_{k=0}^{T-1} \alpha_D^{T-1-k} \mathbb{E}[\delta_k] \\
+&= \alpha_D^T \epsilon_0 + \mathbb{E}[\delta] \cdot \frac{\alpha_D^T - 1}{\alpha_D - 1} \quad \text{(geometric series)}
+\end{align}
+where $\mathbb{E}[\delta] = p_D \cdot \frac{\epsilon_{\max}}{2}$ (Bernoulli-uniform product). QED.
+\end{proof}
+
+\textbf{Quantitative Analysis.} For medium complexity ($D = 0.5$), we have $\alpha_D = 1.36$, $p_D = 0.45$. Over $T = 20$ steps with $\epsilon_0 = 0.1$:
+\begin{align}
+\mathbb{E}[\epsilon_{20}] &\leq 0.1 \cdot 1.36^{20} + \frac{0.45 \cdot 0.3}{2} \cdot \frac{1.36^{20} - 1}{0.36} \\
+&\approx 0.1 \cdot 652 + 0.0675 \cdot 1808 \approx 187
+\end{align}
+This catastrophic explosion (errors exceeding 100$\times$) motivates urgent need for intervention mechanisms. Even clipping errors at $\epsilon_{\max}$ per step, empirical observation shows economy-only strategies average 17.2$\times$ amplification---far exceeding tolerable thresholds.
+
+\subsection{Accuracy-Cost Pareto Frontier}
+
+The fundamental trade-off in LLM orchestration can be characterized via Pareto optimality.
+
+\begin{definition}[Pareto Dominance]
+Policy $\pi$ Pareto-dominates policy $\pi'$ if $\pi$ achieves weakly higher accuracy and weakly lower cost, with at least one strict inequality:
+\begin{equation}
+\text{Acc}(\pi) \geq \text{Acc}(\pi') \
+ \wedge \text{Cost}(\pi) \leq \text{Cost}(\pi') \wedge \big(\text{Acc}(\pi) > \text{Acc}(\pi') \vee \text{Cost}(\pi) < \text{Cost}(\pi')\big)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Pareto Frontier]
+The Pareto frontier $\mathcal{F}$ comprises all policies for which no other policy achieves strict Pareto dominance:
+\begin{equation}
+\mathcal{F} = \{\pi : \nexists \pi' \text{ such that } \pi' \text{ Pareto-dominates } \pi\}
+\end{equation}
+\end{definition}
+
+DAA's meta-policy family parameterized by cost sensitivity $\lambda$ sweeps the Pareto frontier, enabling principled selection of operating points matching application-specific budget constraints and accuracy requirements. Empirical characterization of this frontier appears in \S\ref{sec:pareto}.
+
+\subsection{Verification and Error Recovery Model}
+
+We model verification actions and retry mechanisms Formally defining their expected impact on error state.
+
+\begin{assumption}[Verification Success Probability]
+\label{assump:verification_success}
+When verification action $a_3$ is invoked, it successfully detects and corrects errors with probability $p_{\text{verify}} \geq 0.8$, setting $\epsilon_t \gets 0$. With probability $1 - p_{\text{verify}}$, verification fails (false negative), leaving error unchanged.
+\end{assumption}
+
+This conservative estimate (80\% success rate) reflects limitations of diversity-based detection (moderate correlation $r = 0.385$) and retry mechanism (imperfect error reduction $\eta = 1.2$ per iteration with complexity penalty).
+
+\begin{lemma}[Expected Error Reduction Per Retry]
+\label{lem:retry_reduction}
+Each recursive retry iteration reduces expected error via:
+\begin{equation}
+\mathbb{E}[\epsilon_{k+1} | \epsilon_k] = \max\left(0, \epsilon_k - \frac{\eta}{1 + \beta D}\right)
+\end{equation}
+where $\eta \approx 1.2$ (empirically measured recovery strength) and $\beta = 2.0$ (complexity penalty factor). For $K$ iterations:
+\begin{equation}
+\mathbb{E}[\epsilon_K] \leq \max\left(0, \epsilon_0 - \frac{K\eta}{1 + \beta D}\right)
+\end{equation}
+\end{lemma}
+
+This lemma formalizes the observation that retry effectiveness diminishes with task complexity---high-$D$ tasks require more iterations or alternative strategies (decomposition, external knowledge).
+
+\textbf{Implications for Policy Learning.} The MDP formulation with explicit error dynamics enables the PPO meta-policy to learn when verification provides positive expected value:
+\begin{align}
+V_{\text{verify}}(s_t) &= -10 + p_{\text{verify}} \cdot \mathbb{E}[R | \epsilon_{t+1} = 0] + (1 - p_{\text{verify}}) \cdot \mathbb{E}[R | \epsilon_{t+1} = \epsilon_t] \\
+V_{\text{economy}}(s_t) &= -0.5 + \mathbb{E}[R | \epsilon_{t+1} = \alpha_D \epsilon_t + \delta_t]
+\end{align}
+Verification is optimal when $V_{\text{verify}} > V_{\text{economy}}$, which occurs when current error $\epsilon_t$ and future amplification $\alpha_D^{T-t}$ justify the 20$\times$ cost premium (10.0 vs 0.5). The learned policy internalizes this calculation implicitly through experience.
+
+\subsection{Problem Statement}
+
+Formally, we seek to learn a meta-policy $\pi_\theta^*$ that:
+\begin{enumerate}
+\item Maximizes expected cumulative reward $J(\theta)$ (Eq.~\ref{eq:policy_objective}) over task distribution $\mathcal{D}$
+\item Generalizes across task complexities $D \in [0,1]$ without task-specific tuning
+\item Operates in real-time with latency overhead $< 500$ms for state encoding and action selection
+\item Achieves cost reductions $> 50\%$ vs premium-only baseline while maintaining accuracy $> 80\%$ of premium performance
+\item Provides interpretable action selection enabling human oversight and debugging
+\end{enumerate}
+
+The subsequent sections detail DAA's architecture addressing these requirements (\S\ref{sec:method}), theoretical guarantees (\S\ref{sec:theory}), and empirical validation (\S\ref{sec:experiments}).

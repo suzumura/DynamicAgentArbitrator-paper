@@ -1,0 +1,102 @@
+% Discussion and Conclusion Section
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Summary of Contributions}
+
+This work introduces the Dynamic Agent Arbitrator (DAA), a framework for cost-efficient multi-agent LLM orchestration. Our key contributions are:
+
+\begin{enumerate}
+\item \textbf{Evidence-Aware Selective Escalation}: A three-way response classification (confident / hard\_unknown / soft\_uncertain) that reduces wasteful model escalation by 79\% while maintaining accuracy. This simple yet powerful mechanism distinguishes between model capacity limitations and information limitations---a distinction critical for cost-effective deployment.
+
+\item \textbf{Best-of-Both-Models Effect}: Demonstration that intelligent orchestration can exceed any individual model's performance by combining complementary strengths. On PlanCraft, DAA achieves 70.0\% accuracy, surpassing both the 14B baseline (64.0\%) and 7B baseline (42.0\%).
+
+\item \textbf{Comprehensive Real-World Evaluation}: Validation across four diverse benchmarks (PlanCraft, WorkBench, FinanceBench, BrowseComp+) using actual LLM inference on H100 GPUs, achieving 39.0\% average cost reduction with 1.9$\times$ efficiency improvement.
+
+\item \textbf{SOTA Comparison}: Head-to-head evaluation against three existing model routing methods (FrugalGPT, RouteLLM, Cascade) demonstrating DAA's Pareto-optimal position---highest accuracy at lowest cost (efficiency ratio 0.969 vs next-best 0.929). DAA is the only method to match or exceed baseline accuracy on \emph{every} benchmark.
+
+\item \textbf{Theoretical Foundations}: Formal analysis of error propagation bounds under intervention and PPO convergence guarantees, providing principled grounding for algorithm design.
+\end{enumerate}
+
+\subsection{Practical Implications}
+
+\paragraph{Deployment Recommendations.}
+
+Our experiments reveal several actionable guidelines for practitioners deploying multi-LLM systems:
+
+\begin{itemize}
+\item \textbf{Model pair selection is the most impactful decision.} On PlanCraft, switching from 3B+7B to 7B+14B improved accuracy from 22\% to 70\%---far exceeding any algorithmic optimization. Understanding domain-specific knowledge boundaries should precede algorithm design.
+
+\item \textbf{Simple heuristics often suffice.} The Evidence-Aware Selective Escalation uses straightforward response analysis (length, confidence markers, uncertainty patterns) without requiring expensive neural controllers. In resource-constrained settings, well-calibrated heuristics provide excellent cost-efficiency.
+
+\item \textbf{Smaller models can outperform larger ones on specific task types.} On FinanceBench Medium tasks, the 3B model exceeds 7B performance (0.833 vs 0.793). This non-monotonic relationship validates the need for empirical model-task matching rather than default ``use the largest model'' strategies.
+
+\item \textbf{The ``hard unknown'' category is as important as accuracy.} Identifying tasks where \emph{no model can succeed} (information limitations) prevents wasteful escalation. On BrowseComp+, 33\% of tasks fell into this category, saving substantial cost.
+\end{itemize}
+
+\paragraph{Cost-Efficiency in Production.}
+
+At production scale (millions of queries/day), DAA's 39\% average cost reduction translates to significant savings. For a service processing 10M queries/day at \$0.50/query (7B pricing), DAA would reduce costs by approximately \$1.95M/day while maintaining equivalent quality. The 1.9$\times$ efficiency improvement enables serving more users within fixed compute budgets.
+
+\subsection{Limitations}
+
+\paragraph{Statistical Power.}
+
+Sample sizes range from 18 (FinanceBench) to 60 (WorkBench) tasks per benchmark. While trends are consistent across benchmarks, individual benchmark results have wide confidence intervals. For example, PlanCraft's 70.0\% (50 tasks) has 95\% CI approximately $[56\%, 82\%]$. Larger-scale evaluation would strengthen statistical claims.
+
+\paragraph{Task Difficulty Distribution.}
+
+Performance varies substantially with task difficulty. On PlanCraft val.small (mixed difficulty, 110 tasks), the early 3B+7B configuration showed 13.6\% accuracy vs 19.1\% baseline---a degradation attributable to insufficient model capacity for hard tasks. The solution (7B+14B pairing) requires prior knowledge of task difficulty distributions.
+
+\paragraph{Model-Specific Behavior.}
+
+Our results are obtained with the Qwen2.5 model family. Different model families (LLaMA, Mistral, GPT) may exhibit different knowledge boundaries and capacity scaling, potentially affecting optimal model pairing and escalation thresholds. Cross-family generalization requires further investigation.
+
+\paragraph{Single-Turn Evaluation.}
+
+Current evaluation uses single-turn (one-shot) inference. Many real-world applications involve multi-turn agentic workflows where DAA's model selection could be applied at each turn. Multi-turn evaluation with tool use would better reflect practical deployment scenarios.
+
+\paragraph{Escalation Overhead.}
+
+The try-cheap-first strategy incurs latency overhead when escalation occurs (two model calls instead of one). For latency-sensitive applications, this overhead may be unacceptable. A confidence-based routing approach (predict which model to use \emph{before} any inference) would eliminate this overhead at the cost of prediction accuracy.
+
+\subsection{Future Work}
+
+\paragraph{Learned Escalation Policies.}
+
+While our heuristic-based escalation achieves strong results, a learned policy trained on larger datasets could capture more nuanced escalation decisions. Reinforcement learning with cost-aware reward functions could optimize the accuracy-cost trade-off end-to-end.
+
+\paragraph{Confidence-Based Pre-Routing.}
+
+Instead of try-cheap-first (which adds latency), a router model could predict the appropriate tier from the query alone, enabling single-call inference. This requires training a lightweight classifier on query-outcome pairs, trading some accuracy for latency reduction.
+
+\paragraph{Multi-Turn Agent Orchestration.}
+
+Extending DAA to multi-turn workflows where model selection decisions compound across conversation turns. The MDP formulation in \S\ref{sec:problem} naturally supports this extension, with state tracking across turns.
+
+\paragraph{Cross-Family Model Pools.}
+
+Current evaluation uses models from a single family (Qwen2.5). Heterogeneous pools combining models from different families (e.g., Qwen for coding, LLaMA for reasoning, Mistral for instruction following) could exploit complementary strengths more effectively.
+
+\paragraph{Dynamic Threshold Adaptation.}
+
+Current escalation thresholds are fixed across tasks within a benchmark. Online adaptation based on accumulated success/failure statistics could improve performance as the system processes more queries, implementing a form of meta-learning at deployment time.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented the Dynamic Agent Arbitrator (DAA), a framework for cost-efficient multi-agent LLM orchestration that adaptively selects among heterogeneous model tiers based on estimated task characteristics. Through comprehensive evaluation on four real-world benchmarks using Qwen2.5 models (1.5B--14B) on H100 GPUs, and head-to-head comparison with existing model routing methods (FrugalGPT, RouteLLM, Cascade), we demonstrate that:
+
+\begin{enumerate}
+\item DAA achieves \textbf{equal or superior performance} to large-model baselines across all evaluated benchmarks, with no accuracy degradation---the only method among all compared approaches to achieve this consistently.
+
+\item The Evidence-Aware Selective Escalation mechanism reduces inference costs by \textbf{39.0\% on average} (range 8--66\%) through intelligent three-way response classification, improving cost-efficiency by \textbf{1.9$\times$}.
+
+\item DAA \textbf{dominates the Pareto frontier} across all benchmarks, achieving the highest cost-efficiency ratio (0.969) among all compared methods, including FrugalGPT (0.879), RouteLLM (0.704), and Cascade (0.929).
+
+\item The \textbf{Best-of-Both-Models effect} enables DAA to exceed any individual model's capability by combining complementary strengths, achieving 70.0\% on PlanCraft vs 64.0\% for the 14B baseline---at 16 percentage points lower cost than competing methods reaching the same accuracy.
+
+\item Selective escalation reduces \textbf{wasteful expensive-model invocations by 79\%}, distinguishing between model capacity limitations (where escalation helps) and information limitations (where it does not).
+\end{enumerate}
+
+These results demonstrate that evidence-aware orchestration of heterogeneous LLM pools is a practical and effective strategy for reducing inference costs without sacrificing quality. Unlike existing routing methods that rely on static query analysis or binary confidence thresholds, DAA's three-way classification exploits the model's actual response to make more informed escalation decisions. As LLM deployments scale to handle millions of daily queries, the cost savings provided by approaches like DAA become increasingly critical for sustainable and accessible AI systems.

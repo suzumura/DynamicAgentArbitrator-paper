@@ -1,0 +1,20 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.xdv
+
+# Compiled PDF (keep versioned PDFs only)
+daa_paper_sectioned.pdf
+daa_paper.pdf
+daa_paper_full.pdf
+daa_paper_extended.pdf
+
+# OS
+.DS_Store

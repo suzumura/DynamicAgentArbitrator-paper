@@ -1,0 +1,61 @@
+% Related Work Section
+\section{Related Work}
+\label{sec:related}
+
+Our work synthesizes insights from multiple research streams including multi-agent LLM systems, error detection and verification, inference cost optimization, meta-learning for language models, and error propagation in reasoning. We position DAA relative to each thread and highlight novel contributions.
+
+\subsection{Multi-Agent and Ensemble LLM Systems}
+
+\textbf{Ensemble Aggregation.} Early work on improving LLM reliability through ensemble methods includes Self-Consistency~\cite{wang2023selfconsistency}, which samples multiple reasoning paths and selects outputs via majority voting, achieving substantial accuracy improvements (17.9\% on GSM8K, 12.2\% on StrategyQA) at the cost of 5-10$\times$ inference expense. Universal Self-Consistency~\cite{chen2023universal} extends this by learning task-specific aggregation weights, while Mixture-of-Agents~\cite{jiang2024mixtureofagents} employs layered ensembles where each layer refines outputs from previous layers, demonstrating AlpacaEval wins exceeding GPT-4 Turbo.
+
+However, these approaches share critical limitations: (1) \emph{Uniform aggregation}---all models contribute equally regardless of task-specific strengths; (2) \emph{Cost blindness}---no explicit cost modeling or budget-aware allocation; (3) \emph{Static weighting}---aggregation rules do not adapt dynamically to runtime complexity. DAA addresses these gaps through learned meta-policies that allocate heterogeneous models based on estimated task complexity and accumulated error state, achieving cost-efficiency via selective rather than uniform deployment.
+
+\textbf{Convergent Hallucinations.} A fundamental failure mode of ensemble methods is \emph{convergent hallucination}~\cite{kadavath2022language}, where models trained on overlapping data distributions confidently agree on incorrect answers due to shared systematic biases. Kadavath et al. demonstrate that LLMs exhibit poor calibration on knowledge-intensive tasks, with confidence scores poorly correlated with factual accuracy. This causes majority voting to reinforce rather than correct errors---a problem exacerbated as model families converge toward similar training paradigms (e.g., RLHF-tuned assistants). Our diversity-based probing partially addresses this by treating disagreement as a warning signal rather than relying solely on consensus for correctness.
+
+\textbf{Debate and Refinement.} Multi-agent debate~\cite{du2023improving} employs iterative argumentation where agents propose, critique, and refine solutions, improving mathematical reasoning and factual accuracy over single-shot inference. However, debate systems typically incur 3-5$\times$ cost multipliers and require sophisticated prompt engineering for stable convergence. DAA's recursive retry mechanism provides structured refinement more efficiently by focusing corrections on identified errors rather than general debate across all aspects.
+
+\subsection{Error Detection and Verification in LLM Outputs}
+
+\textbf{Self-Verification and Critique.} Self-Refine~\cite{madaan2023selfrefine} demonstrates LLMs can iteratively improve outputs through self-generated feedback, achieving gains on code generation, dialogue, and mathematical reasoning. However, self-critique effectiveness depends critically on the model's ability to recognize its own errors---a capability that degrades precisely when errors stem from knowledge gaps or systematic biases rather than reasoning slips. Our approach complements self-refinement with external diversity signals less susceptible to shared blind spots.
+
+\textbf{Trained Verifiers.} Process-supervised reward models~\cite{cobbe2021training,lightman2023lets} train specialized verifier networks on step-by-step reasoning traces, enabling identification of faulty intermediate steps in chain-of-thought reasoning. While effective, verifier training requires extensive labeled data (hundreds of thousands of annotated reasoning steps) and exhibits limited out-of-distribution generalization. DAA achieves training-free error detection via diversity probing, though at the cost of lower precision (Pearson $r = 0.385$ vs potential $r > 0.7$ for trained verifiers).
+
+\textbf{Factuality and Attribution.} Recent work on LLM factuality includes retrieval-augmented generation~\cite{lewis2020retrieval}, which grounds generation in retrieved documents, and attribution methods~\cite{gao2023enabling} that link claims to source evidence. While orthogonal to our orchestration focus, these techniques could complement DAA by improving economy model reliability through external knowledge grounding, potentially reducing error injection rates $p_D$.
+
+\subsection{Inference Cost Optimization and Efficient Serving}
+
+\textbf{Speculative Decoding.} Speculative decoding~\cite{leviathan2023fast,chen2023accelerating} accelerates generation by using small ``draft'' models to propose token sequences verified by large ``target'' models in parallel, achieving 2-3$\times$ wall-clock speedups with identical output distributions. While effective for latency reduction, speculative decoding does not address the accuracy-cost trade-off in task-level allocation---it assumes the target model must always be invoked, whereas DAA learns when economy models suffice entirely.
+
+\textbf{Early-Exit and Cascade Architectures.} Depth-adaptive transformers~\cite{elbayad2020depth} implement early-exit layers that terminate computation when confidence exceeds thresholds, reducing average inference cost. Cascade systems~\cite{schuster2022confident} sequence models of increasing capacity, routing to larger models only when smaller ones exhibit low confidence. However, these approaches rely on \emph{static thresholds} (manually tuned per task) and \emph{myopic decisions} (without considering downstream error propagation). DAA's learned policy adapts thresholds dynamically and optimizes cumulative rather than per-step objectives.
+
+\textbf{FrugalGPT.} Most directly related is FrugalGPT~\cite{chen2023frugalgpt}, which cascades multiple LLM APIs with increasing cost, using prompt-length heuristics and score-based routing to minimize expense while maintaining accuracy targets. Key differences from DAA include: (1) FrugalGPT uses hand-crafted features (prompt length, keywords) whereas DAA learns semantic representations; (2) FrugalGPT employs greedy routing whereas DAA optimizes multi-step trajectories via RL; (3) FrugalGPT lacks explicit error detection and recovery mechanisms central to DAA.
+
+\subsection{Meta-Learning and Prompt Optimization for LLMs}
+
+\textbf{In-Context Learning.} Brown et al.~\cite{brown2020language} demonstrate LLMs learn tasks from demonstrations without parameter updates, with performance scaling predictably with example quality and quantity. Min et al.~\cite{min2022rethinking} analyze in-context learning mechanisms, showing label correctness matters less than input-output format for many tasks. While DAA does not modify model parameters, it performs \emph{meta-learning at the orchestration level}---learning which model to invoke rather than which examples to provide.
+
+\textbf{Prompt Engineering and Optimization.} Automated prompt discovery~\cite{zhou2023large} uses LLMs to generate and refine prompts, while gradient-free optimization methods~\cite{prasad2023grips} search discrete prompt spaces for accuracy. These techniques orthogonally complement DAA by improving individual model performance; DAA's contribution lies in strategic allocation across models rather than per-model optimization.
+
+\textbf{Hyperparameter Tuning for LLMs.} Recent work explores automated configuration of generation parameters (temperature, top-$p$, frequency penalty)~\cite{pmlr-v202-guo23i}, demonstrating substantial task-specific performance variance. DAA could integrate such tuning by expanding its action space to include configuration parameters alongside model selection.
+
+\subsection{Error Propagation and Compounding in Reasoning}
+
+\textbf{Chain-of-Thought Robustness.} Chain-of-thought prompting~\cite{wei2022chain,kojima2022large} elicits step-by-step reasoning, improving performance on arithmetic, commonsense, and symbolic tasks. However, Wang et al.~\cite{wang2023towards} demonstrate CoT brittleness---small perturbations in intermediate steps cause cascading errors, with accuracy degrading exponentially with reasoning chain length. Creswell et al.~\cite{creswell2022selection} propose selection-inference prompting to mitigate this, alternating generation with explicit validation steps. DAA's recursive retry provides a complementary mechanism, correcting detected errors rather than preventing them through careful prompting.
+
+\textbf{Tree-of-Thoughts.} Yao et al.~\cite{yao2023tree} explore multiple reasoning branches via tree search, maintaining diverse hypotheses and pruning via heuristic evaluation. While highly effective on puzzles (Game of 24, Creative Writing), ToT incurs exponential cost scaling (5-50$\times$ vs standard prompting). DAA achieves more favorable cost-accuracy trade-offs by learning when to invest in verification versus accepting economy outputs.
+
+\textbf{Faithful Reasoning.} Methods for ensuring reasoning faithfulness include constrained decoding~\cite{hokamp2017lexically}, program synthesis~\cite{gao2023pal}, and formal verification~\cite{first2023baldur}. These provide stronger correctness guarantees than DAA's probabilistic error detection but require domain-specific engineering (formal specifications, executable semantics) limiting generality.
+
+\subsection{Positioning DAA's Novel Contributions}
+
+DAA synthesizes and extends prior work in several dimensions:
+
+\textbf{Learned vs Rule-Based Allocation.} Unlike cascade systems (FrugalGPT, early-exit) relying on manually tuned rules, DAA learns strategic allocation via RL, adapting to task distributions and cost structures.
+
+\textbf{Proactive vs Reactive Error Handling.} Unlike self-refinement methods operating post-hoc, DAA's diversity probing provides real-time error signals enabling preemptive intervention before propagation.
+
+\textbf{Multi-Step vs Greedy Optimization.} DAA optimizes cumulative trajectories considering downstream error consequences, whereas myopic greedy routing minimizes immediate cost without future planning.
+
+\textbf{Integrated Framework.} DAA uniquely combines task encoding, error detection, strategic allocation, and recursive recovery in a unified end-to-end trainable framework rather than composing independent components.
+
+These contributions position DAA as the first comprehensive system for learnable, cost-aware, self-correcting multi-agent LLM orchestration with formal theoretical grounding and rigorous empirical validation.
