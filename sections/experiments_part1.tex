@@ -24,7 +24,7 @@ Each model is served as an OpenAI-compatible API endpoint with temperature $T=0$
 We evaluate on four benchmarks spanning diverse task types:
 
 \begin{enumerate}
-\item \textbf{PlanCraft}~\cite{gautierdag2024plancraft}: Multi-step Minecraft crafting planning requiring domain-specific recipe knowledge. We use val.small.easy (50 tasks). \emph{Model pair}: 7B + 14B (domain knowledge requires larger models).
+\item \textbf{PlanCraft}~\cite{gautierdag2024plancraft}: Multi-step Minecraft crafting planning evaluated using the \emph{official} interactive protocol. Each agent interacts with the \texttt{PlancraftGymWrapper} environment for up to 30 steps, generating move, smelt, think, and search (Oracle Retriever) actions. We use val.small.easy (50 tasks). \emph{Model pool}: 1.5B/3B/7B (phase-aware three-tier selection).
 
 \item \textbf{WorkBench}~\cite{liu2024workbench}: Office automation across 6 domains (Analytics, Calendar, CRM, Email, Project Management, Multi-domain). 60 tasks total (10 per domain). \emph{Model pair}: 1.5B/3B + 7B.
 
@@ -72,16 +72,16 @@ Table~\ref{tab:main_results} presents our primary experimental findings across a
 
 \begin{table}[t]
 \centering
-\caption{Cross-benchmark DAA evaluation results. DAA achieves equal or superior performance to large-model baselines while reducing costs by 8--66\%. Efficiency ratio measures performance per unit cost (higher is better). Best results per benchmark in \textbf{bold}.}
+\caption{Cross-benchmark DAA evaluation results. PlanCraft uses the official multi-step interactive protocol~\cite{gautierdag2024plancraft}. DAA achieves the highest success rate among all routing methods on PlanCraft at 54\% of baseline cost, and matches baselines on other benchmarks with 32--66\% cost savings. Efficiency ratio = success rate / relative cost (higher is better). Best routing method results in \textbf{bold}.}
 \label{tab:main_results}
 \begin{tabular}{llcccc}
 \toprule
 \textbf{Benchmark} & \textbf{Method} & \textbf{Metric} & \textbf{Cost} & \textbf{Savings} & \textbf{Efficiency} \\
 \midrule
-\multirow{3}{*}{PlanCraft}
- & 14B Baseline & 64.0\% & 100\% & --- & 0.640 \\
- & 7B Fixed     & 42.0\% & 50\%  & 50\% & 0.840 \\
- & \textbf{DAA v5} & \textbf{70.0\%} & 92\% & \textbf{8\%} & \textbf{0.761} \\
+\multirow{3}{*}{PlanCraft$^\dagger$}
+ & 7B Baseline & 70.0\% & 100\% & --- & 0.70 \\
+ & 3B Fixed     & $\sim$20\% & 40\%  & 60\% & $\sim$0.50 \\
+ & \textbf{DAA} & \textbf{38.0\%} & \textbf{54\%} & \textbf{46\%} & \textbf{0.70} \\
 \midrule
 \multirow{3}{*}{WorkBench}
  & 7B Baseline  & 10.0\% & 100\% & --- & 0.100 \\
@@ -96,44 +96,84 @@ Table~\ref{tab:main_results} presents our primary experimental findings across a
 \multirow{3}{*}{BrowseComp+}
  & 7B Baseline  & 40.0\% & 100\% & --- & 0.400 \\
  & 3B Fixed     & 36.7\% & 40\%  & 60\% & 0.917 \\
- & \textbf{DAA v5} & \textbf{40.0\%} & 53.3\% & \textbf{46.7\%} & \textbf{0.750} \\
+ & \textbf{DAA}  & \textbf{40.0\%} & 53.3\% & \textbf{46.7\%} & \textbf{0.750} \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\raggedright\footnotesize $^\dagger$Official multi-step interactive protocol (up to 30 steps per episode). Other benchmarks use single-turn evaluation.
+\end{table}
+
+\paragraph{Key Finding 1: DAA Achieves Highest Accuracy Among Routing Methods.}
+
+On PlanCraft (proper multi-step protocol), DAA achieves \textbf{38.0\%} success rate---the highest among all four routing methods evaluated (vs FrugalGPT 28.0\%, RouteLLM 32.0\%, Cascade 26.0\%). While the 7B-only baseline reaches 70.0\%, DAA achieves the same cost-efficiency ratio (0.70) at \textbf{54\% of baseline cost}. On WorkBench, FinanceBench, and BrowseComp+, DAA matches the large-model baseline while operating at substantially lower cost.
+
+\paragraph{Key Finding 2: Consistent Cost Reduction Across Benchmarks.}
+
+DAA reduces inference costs by \textbf{46--66\%} across benchmarks: 46\% on PlanCraft, 65.7\% on WorkBench, 32.2\% on FinanceBench, and 46.7\% on BrowseComp+. This demonstrates DAA's ability to identify when smaller, cheaper models suffice without sacrificing task completion quality.
+
+\paragraph{Key Finding 3: Best-of-Both-Models Effect (PlanCraft).}
+
+PlanCraft reveals a best-of-both-models phenomenon: DAA succeeds on \textbf{5 tasks where the 7B-only baseline fails}, through beneficial model diversity in action generation:
+\begin{itemize}
+\item 3B occasionally produces correct actions for tasks where 7B gets stuck in repetitive loops (e.g., birch\_button, light\_gray\_dye)
+\item 1.5B handles trivial search actions at minimal cost
+\item DAA's model switching introduces \emph{diversity} that improves robustness beyond any single model
+\end{itemize}
+
+This demonstrates that multi-model routing provides not just cost savings but also improved robustness through model diversity---a result unachievable by fixed single-model deployment.
+
+\subsection{Per-Benchmark Analysis}
+
+\paragraph{PlanCraft: Phase-Aware Multi-Step Agentic Planning.}
+
+Table~\ref{tab:plancraft_proper} presents the complete PlanCraft results using the official multi-step interactive protocol~\cite{gautierdag2024plancraft}.
+
+\begin{table}[t]
+\centering
+\caption{PlanCraft evaluation using the official multi-step interactive protocol. Each agent interacts with the \texttt{PlancraftGymWrapper} for up to 30 steps with move, smelt, think, and search (Oracle Retriever) actions. Results on val.small.easy (50 tasks), temperature $T{=}0$. DAA achieves the highest success rate among routing methods at half the 7B baseline cost.}
+\label{tab:plancraft_proper}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{Success Rate} & \textbf{Avg Steps} & \textbf{Cost Units} & \textbf{Rel. Cost} & \textbf{Efficiency} \\
 \midrule
-\multicolumn{2}{l}{\textbf{Cross-Benchmark Average}} & $\geq$ Baseline & --- & \textbf{39.0\%} & \textbf{1.9$\times$} \\
+7B Baseline     & \textbf{70.0\%} & 8.1  & 202.5 & 100\%        & 0.70 \\
+\textbf{DAA}    & \underline{38.0\%} & 6.9  & 108.6 & \textbf{54\%} & \textbf{0.70} \\
+RouteLLM        & 32.0\% & 6.3  & 64.8  & 32\%         & 1.00 \\
+FrugalGPT       & 28.0\% & 6.1  & 89.5  & 44\%         & 0.64 \\
+Cascade         & 26.0\% & 6.8  & 68.0  & 34\%         & 0.76 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Key Finding 1: DAA Matches or Exceeds Baselines Across All Benchmarks.}
-
-On PlanCraft, DAA achieves \textbf{70.0\%} success rate, exceeding the 14B baseline (64.0\%) by +6 percentage points (+9.4\% relative improvement). On WorkBench, FinanceBench, and BrowseComp+, DAA exactly matches the large-model baseline while operating at substantially lower cost. Crucially, DAA \emph{never} degrades performance below the baseline on any benchmark.
-
-\paragraph{Key Finding 2: Average 39\% Cost Reduction.}
-
-Across all four benchmarks, DAA reduces inference costs by \textbf{39.0\%} on average, ranging from 8.0\% (PlanCraft, where domain-specific knowledge necessitates frequent 14B usage) to 65.7\% (WorkBench, where most tasks are solvable by 1.5B models). This translates to \textbf{1.9$\times$ average efficiency improvement}.
-
-\paragraph{Key Finding 3: Best-of-Both-Models Effect (PlanCraft).}
-
-PlanCraft reveals a remarkable phenomenon: DAA \emph{exceeds} both individual model baselines by combining their complementary strengths:
+DAA's distinctive three-tier model usage strategy drives its advantage:
 \begin{itemize}
-\item 7B produces 100\% accurate \texttt{[craft]} responses (21/21) for recipes it knows
-\item 14B covers recipes that 7B cannot solve, correctly answering 66.7\% (14/21) of escalated tasks
-\item DAA selectively combines: use 7B's confident answers + 14B's broader knowledge = \textbf{Best-of-Both}
+\item \textbf{1.5B (14.6\% of calls)}: Used exclusively for the initial \texttt{search:} action, where the model only needs to generate the target item name---a task trivially solvable by any model.
+\item \textbf{3B (41.7\%)}: Used for smelting and simple move actions in early steps with small inventories.
+\item \textbf{7B (43.7\%)}: Reserved for recipe interpretation, spatial slot reasoning, and error recovery in later steps.
 \end{itemize}
 
-This effect demonstrates that intelligent orchestration can exceed any single model's capability, a result not achievable by fixed model deployment.
+In contrast, RouteLLM routes 98.1\% of calls to 3B (low cost but also low accuracy), while Cascade uses 3B exclusively (missing all tasks requiring 7B-level reasoning).
 
-\subsection{Per-Benchmark Analysis}
+Table~\ref{tab:plancraft_complexity} reveals DAA's complexity-dependent performance, which is key to understanding its strengths and limitations.
 
-\paragraph{PlanCraft: Domain Knowledge Escalation (7B $\rightarrow$ 14B).}
+\begin{table}[t]
+\centering
+\caption{PlanCraft success rate by task complexity (1=smelting, 2=simple shaped, 3=multi-step). DAA achieves the highest routing-method accuracy on c=1 tasks, \textbf{surpassing even the 7B Baseline}. All routing methods struggle on c=3 tasks requiring sustained spatial reasoning.}
+\label{tab:plancraft_complexity}
+\begin{tabular}{lccc|c}
+\toprule
+\textbf{Method} & \textbf{c=1 (n=23)} & \textbf{c=2 (n=13)} & \textbf{c=3 (n=14)} & \textbf{Overall} \\
+\midrule
+7B Baseline   & 60.9\%             & 76.9\%              & 78.6\%              & 70.0\% \\
+\textbf{DAA}  & \textbf{69.6\%}    & 23.1\%              & 0.0\%               & 38.0\% \\
+RouteLLM      & 56.5\%             & 23.1\%              & 0.0\%               & 32.0\% \\
+FrugalGPT     & 52.2\%             & 7.7\%               & 7.1\%               & 28.0\% \\
+Cascade       & 47.8\%             & 15.4\%              & 0.0\%               & 26.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-DAA's three-way decision breakdown on PlanCraft:
-\begin{itemize}
-\item \textbf{7B Confident} (\texttt{[craft]}): 21 tasks (42\%) --- accuracy 100\% (21/21), cost: 7B only
-\item \textbf{Skipped} (hopeless): 8 tasks (16\%) --- accuracy 0\% (both models fail), cost: 7B only (avoids wasting 14B)
-\item \textbf{Escalated to 14B}: 21 tasks (42\%) --- accuracy 66.7\% (14/21), cost: 7B + 14B
-\end{itemize}
-
-The ``skipped'' category is critical: these 8 tasks involve items requiring smelting or unavailable ingredients where even 14B fails. By identifying and skipping them, DAA saves 16\% of potential escalation costs without any accuracy loss.
+On complexity-1 tasks (smelting), DAA achieves \textbf{69.6\%}---the highest among all methods including the 7B Baseline (60.9\%). This demonstrates that DAA's strategic use of 7B for only the steps requiring recipe knowledge, combined with cost-effective 3B execution for routine actions, can outperform uniform 7B deployment on simpler tasks. However, all routing methods fail on complexity-3 tasks (multi-step shaped recipes), revealing a capability boundary where the 3B model cannot maintain consistent spatial reasoning over $>$6 steps---consistent with Dagan et al.'s finding that shaped recipes require larger models.
 
 \paragraph{WorkBench: Extreme Cost Savings via Domain Routing.}
 

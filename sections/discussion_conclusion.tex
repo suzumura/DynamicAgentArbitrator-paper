@@ -7,13 +7,13 @@
 This work introduces the Dynamic Agent Arbitrator (DAA), a framework for cost-efficient multi-agent LLM orchestration. Our key contributions are:
 
 \begin{enumerate}
-\item \textbf{Evidence-Aware Selective Escalation}: A three-way response classification (confident / hard\_unknown / soft\_uncertain) that reduces wasteful model escalation by 79\% while maintaining accuracy. This simple yet powerful mechanism distinguishes between model capacity limitations and information limitations---a distinction critical for cost-effective deployment.
+\item \textbf{Evidence-Aware Selective Escalation}: A three-way response classification (confident / hard\_unknown / soft\_uncertain) that reduces wasteful model escalation by 79\% while maintaining accuracy. This mechanism distinguishes between model capacity limitations and information limitations---a distinction critical for cost-effective deployment.
 
-\item \textbf{Best-of-Both-Models Effect}: Demonstration that intelligent orchestration can exceed any individual model's performance by combining complementary strengths. On PlanCraft, DAA achieves 70.0\% accuracy, surpassing both the 14B baseline (64.0\%) and 7B baseline (42.0\%).
+\item \textbf{Phase-Aware Multi-Tier Model Selection}: On PlanCraft, evaluated using the official multi-step interactive protocol~\cite{gautierdag2024plancraft}, DAA's three-tier strategy (1.5B for search, 3B for smelting, 7B for reasoning) achieves 38.0\% success rate---the highest among all routing methods---at 54\% of baseline cost.
 
-\item \textbf{Comprehensive Real-World Evaluation}: Validation across four diverse benchmarks (PlanCraft, WorkBench, FinanceBench, BrowseComp+) using actual LLM inference on H100 GPUs, achieving 39.0\% average cost reduction with 1.9$\times$ efficiency improvement.
+\item \textbf{Best-of-Both-Models Effect}: Demonstration that multi-model routing provides robustness beyond any single model. DAA succeeds on 5 PlanCraft tasks where the 7B-only baseline fails, and achieves 69.6\% on complexity-1 tasks---surpassing the 7B Baseline's 60.9\%.
 
-\item \textbf{SOTA Comparison}: Head-to-head evaluation against three existing model routing methods (FrugalGPT, RouteLLM, Cascade) demonstrating DAA's Pareto-optimal position---highest accuracy at lowest cost (efficiency ratio 0.969 vs next-best 0.929). DAA is the only method to match or exceed baseline accuracy on \emph{every} benchmark.
+\item \textbf{Comprehensive Evaluation}: Validation across four diverse benchmarks with head-to-head comparison against FrugalGPT, RouteLLM, and Cascade. DAA achieves the highest accuracy among routing methods on every benchmark, with 32--66\% cost savings.
 
 \item \textbf{Theoretical Foundations}: Formal analysis of error propagation bounds under intervention and PPO convergence guarantees, providing principled grounding for algorithm design.
 \end{enumerate}
@@ -25,13 +25,13 @@ This work introduces the Dynamic Agent Arbitrator (DAA), a framework for cost-ef
 Our experiments reveal several actionable guidelines for practitioners deploying multi-LLM systems:
 
 \begin{itemize}
-\item \textbf{Model pair selection is the most impactful decision.} On PlanCraft, switching from 3B+7B to 7B+14B improved accuracy from 22\% to 70\%---far exceeding any algorithmic optimization. Understanding domain-specific knowledge boundaries should precede algorithm design.
+\item \textbf{Phase-aware model selection is the most impactful decision.} On PlanCraft, DAA's three-tier strategy (1.5B for search, 3B for smelting, 7B for reasoning) achieves 38.0\% vs Cascade's 26.0\% using 3B-only. Allocating models to appropriate task \emph{phases} matters as much as which models are available.
 
 \item \textbf{Simple heuristics often suffice.} The Evidence-Aware Selective Escalation uses straightforward response analysis (length, confidence markers, uncertainty patterns) without requiring expensive neural controllers. In resource-constrained settings, well-calibrated heuristics provide excellent cost-efficiency.
 
-\item \textbf{Smaller models can outperform larger ones on specific task types.} On FinanceBench Medium tasks, the 3B model exceeds 7B performance (0.833 vs 0.793). This non-monotonic relationship validates the need for empirical model-task matching rather than default ``use the largest model'' strategies.
+\item \textbf{Smaller models can outperform larger ones on specific task types.} On PlanCraft complexity-1 tasks (smelting), DAA achieves 69.6\% vs the 7B Baseline's 60.9\%. On FinanceBench Medium tasks, the 3B model exceeds 7B performance (0.833 vs 0.793). These non-monotonic relationships validate the need for empirical model-task matching.
 
-\item \textbf{The ``hard unknown'' category is as important as accuracy.} Identifying tasks where \emph{no model can succeed} (information limitations) prevents wasteful escalation. On BrowseComp+, 33\% of tasks fell into this category, saving substantial cost.
+\item \textbf{Model diversity improves robustness.} DAA succeeds on 5 PlanCraft tasks where the 7B-only baseline fails, through beneficial diversity in action generation. Model switching breaks single-model failure modes (e.g., 7B loops on birch\_button for 21 steps).
 \end{itemize}
 
 \paragraph{Cost-Efficiency in Production.}
@@ -85,18 +85,18 @@ Current escalation thresholds are fixed across tasks within a benchmark. Online 
 \section{Conclusion}
 \label{sec:conclusion}
 
-We have presented the Dynamic Agent Arbitrator (DAA), a framework for cost-efficient multi-agent LLM orchestration that adaptively selects among heterogeneous model tiers based on estimated task characteristics. Through comprehensive evaluation on four real-world benchmarks using Qwen2.5 models (1.5B--14B) on H100 GPUs, and head-to-head comparison with existing model routing methods (FrugalGPT, RouteLLM, Cascade), we demonstrate that:
+We have presented the Dynamic Agent Arbitrator (DAA), a framework for cost-efficient multi-agent LLM orchestration that adaptively selects among heterogeneous model tiers based on estimated task characteristics. Through comprehensive evaluation on four real-world benchmarks---including the official multi-step interactive protocol for PlanCraft---and head-to-head comparison with existing model routing methods (FrugalGPT, RouteLLM, Cascade), we demonstrate that:
 
 \begin{enumerate}
-\item DAA achieves \textbf{equal or superior performance} to large-model baselines across all evaluated benchmarks, with no accuracy degradation---the only method among all compared approaches to achieve this consistently.
+\item DAA achieves the \textbf{highest success rate among all routing methods} on every evaluated benchmark, outperforming competitors by 6--12 percentage points on PlanCraft.
 
-\item The Evidence-Aware Selective Escalation mechanism reduces inference costs by \textbf{39.0\% on average} (range 8--66\%) through intelligent three-way response classification, improving cost-efficiency by \textbf{1.9$\times$}.
+\item DAA's \textbf{phase-aware three-tier model selection} (1.5B for search, 3B for smelting, 7B for reasoning) on PlanCraft achieves 38.0\% at 54\% of baseline cost, and achieves \textbf{69.6\% on complexity-1 tasks}---surpassing even the 7B-only Baseline (60.9\%).
 
-\item DAA \textbf{dominates the Pareto frontier} across all benchmarks, achieving the highest cost-efficiency ratio (0.969) among all compared methods, including FrugalGPT (0.879), RouteLLM (0.704), and Cascade (0.929).
+\item The Evidence-Aware Selective Escalation mechanism reduces wasteful escalation by \textbf{79\%} on BrowseComp+, where DAA is the only routing method to maintain baseline accuracy (40.0\%).
 
-\item The \textbf{Best-of-Both-Models effect} enables DAA to exceed any individual model's capability by combining complementary strengths, achieving 70.0\% on PlanCraft vs 64.0\% for the 14B baseline---at 16 percentage points lower cost than competing methods reaching the same accuracy.
+\item The \textbf{Best-of-Both-Models effect} demonstrates that multi-model routing provides robustness through diversity: DAA succeeds on 5 PlanCraft tasks where the 7B-only baseline fails, by breaking single-model failure modes via model switching.
 
-\item Selective escalation reduces \textbf{wasteful expensive-model invocations by 79\%}, distinguishing between model capacity limitations (where escalation helps) and information limitations (where it does not).
+\item DAA reduces inference costs by \textbf{32--66\%} across benchmarks while maintaining the highest routing-method accuracy.
 \end{enumerate}
 
-These results demonstrate that evidence-aware orchestration of heterogeneous LLM pools is a practical and effective strategy for reducing inference costs without sacrificing quality. Unlike existing routing methods that rely on static query analysis or binary confidence thresholds, DAA's three-way classification exploits the model's actual response to make more informed escalation decisions. As LLM deployments scale to handle millions of daily queries, the cost savings provided by approaches like DAA become increasingly critical for sustainable and accessible AI systems.
+These results demonstrate that evidence-aware, phase-aware orchestration of heterogeneous LLM pools is a practical and effective strategy for reducing inference costs in both single-turn and multi-step agentic settings. As LLM deployments scale to handle millions of daily queries, the cost savings and robustness improvements provided by approaches like DAA become increasingly critical for sustainable and accessible AI systems.
